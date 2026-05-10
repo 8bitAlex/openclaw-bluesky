@@ -1,0 +1,121 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/8bitalex/raid/main/schemas/raid-repo.schema.json
+
+# Per-repo raid configuration for openclaw-bluesky.
+# Run any command with: raid <command>
+# See: https://raidcli.dev
+
+name: openclaw-bluesky
+branch: main
+
+commands:
+  - name: build
+    usage: Compile the TypeScript plugin to dist/
+    tasks:
+      - type: Print
+        message: "▶ building plugin"
+        color: cyan
+      - type: Shell
+        cmd: npm run build
+        path: ./plugin
+      - type: Print
+        message: "✓ build complete"
+        color: green
+
+  - name: typecheck
+    usage: Typecheck the plugin without emitting JS
+    tasks:
+      - type: Shell
+        cmd: npm run typecheck
+        path: ./plugin
+
+  - name: test
+    usage: Run the plugin's vitest suite
+    tasks:
+      - type: Print
+        message: "▶ running plugin tests"
+        color: cyan
+      - type: Shell
+        cmd: npm test
+        path: ./plugin
+
+  - name: clean
+    usage: Remove dist/ and tsbuildinfo
+    tasks:
+      - type: Shell
+        cmd: npm run clean
+        path: ./plugin
+
+  - name: ci
+    usage: Run the full CI check locally — typecheck + build + test
+    tasks:
+      - type: Print
+        message: "▶ ci: typecheck"
+        color: cyan
+      - type: Shell
+        cmd: npm run typecheck
+        path: ./plugin
+      - type: Print
+        message: "▶ ci: build"
+        color: cyan
+      - type: Shell
+        cmd: npm run build
+        path: ./plugin
+      - type: Print
+        message: "▶ ci: test"
+        color: cyan
+      - type: Shell
+        cmd: npm test
+        path: ./plugin
+      - type: Print
+        message: "✓ all checks passed"
+        color: green
+
+  - name: install-plugin
+    usage: Link-install this plugin into the local OpenClaw host
+    tasks:
+      - type: Print
+        message: "▶ link-installing into OpenClaw"
+        color: cyan
+      - type: Shell
+        cmd: npm run build
+        path: ./plugin
+      - type: Shell
+        cmd: openclaw plugins install --link ./plugin --force
+      - type: Print
+        message: "✓ installed. Restart the OpenClaw gateway to load the plugin."
+        color: green
+
+  - name: doctor
+    usage: Run openclaw doctor and grep for plugin-relevant warnings
+    tasks:
+      - type: Shell
+        cmd: openclaw doctor 2>&1 | grep -iE 'bluesky|invalid|errors:' || true
+
+  - name: cli-deps
+    usage: Set up the standalone Python CLI venv
+    tasks:
+      - type: Print
+        message: "▶ creating cli venv"
+        color: cyan
+      - type: Shell
+        cmd: python3 -m venv .venv
+        path: ./cli
+      - type: Shell
+        cmd: ./.venv/bin/pip install --quiet --upgrade pip -r requirements.txt
+        path: ./cli
+      - type: Print
+        message: "✓ cli venv ready at cli/.venv"
+        color: green
+
+  - name: cli-smoke
+    usage: Import-check the Python CLI modules
+    tasks:
+      - type: Shell
+        cmd: ./.venv/bin/python -c "import bsky; import _facets; print('ok')"
+        path: ./cli
+
+  - name: cli-install
+    usage: Run the user-facing CLI installer (./cli/install.sh)
+    tasks:
+      - type: Shell
+        cmd: ./cli/install.sh
