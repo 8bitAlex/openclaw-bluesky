@@ -1,0 +1,79 @@
+{
+  "name": "@8bitalex/openclaw-bluesky",
+  "version": "0.0.1",
+  "description": "Bluesky / AT Protocol channel plugin for OpenClaw",
+  "type": "module",
+  "license": "MIT",
+  "author": "Alex Salerno <alex.salerno@me.com>",
+  "homepage": "https://github.com/8bitAlex/openclaw-bluesky",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/8bitAlex/openclaw-bluesky.git",
+    "directory": "plugin"
+  },
+  "bugs": {
+    "url": "https://github.com/8bitAlex/openclaw-bluesky/issues"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "bluesky",
+    "atproto",
+    "channel"
+  ],
+  "files": [
+    "dist/**",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p .",
+    "build:watch": "tsc -p . --watch",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p . --noEmit",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "dependencies": {
+    "@atproto/api": "^0.13.0"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.7"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "openclaw": ">=2026.5.7",
+    "typescript": "^5.5.0",
+    "@types/node": "^22.0.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "setupEntry": "./src/setup-entry.ts",
+    "runtimeExtensions": [
+      "./dist/index.js"
+    ],
+    "runtimeSetupEntry": "./dist/setup-entry.js",
+    "channel": {
+      "id": "bluesky",
+      "label": "Bluesky",
+      "selectionLabel": "Bluesky (AT Protocol)",
+      "detailLabel": "Bluesky",
+      "docsPath": "/channels/bluesky",
+      "blurb": "Post and read on Bluesky via AT Protocol app passwords.",
+      "markdownCapable": false
+    },
+    "install": {
+      "npmSpec": "@8bitalex/openclaw-bluesky",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.4.10"
+    },
+    "compat": {
+      "pluginApi": ">=2026.5.7"
+    }
+  }
+}

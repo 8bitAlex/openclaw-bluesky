@@ -1,0 +1,51 @@
+{
+  "$schema": "https://docs.openclaw.ai/schemas/plugin.json",
+  "id": "bluesky",
+  "channels": ["bluesky"],
+  "channelEnvVars": {
+    "bluesky": ["BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"]
+  },
+  "channelConfigs": {
+    "bluesky": {
+      "schema": {
+        "type": "object",
+        "title": "Bluesky channel",
+        "description": "AT Protocol account credentials. Use an app password from https://bsky.app/settings/app-passwords.",
+        "properties": {
+          "handle": {
+            "type": "string",
+            "title": "Handle",
+            "description": "Your Bluesky handle (e.g. you.bsky.social).",
+            "examples": ["you.bsky.social"]
+          },
+          "appPassword": {
+            "title": "App password",
+            "description": "App password (NOT your account password). Create one at https://bsky.app/settings/app-passwords.",
+            "anyOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "properties": {
+                  "source": { "enum": ["env", "file", "exec"] },
+                  "provider": { "type": "string" },
+                  "id": { "type": "string" }
+                },
+                "required": ["source", "id"]
+              }
+            ]
+          },
+          "service": {
+            "type": "string",
+            "title": "PDS service URL",
+            "description": "AT Protocol service endpoint. Defaults to the public Bluesky PDS.",
+            "default": "https://bsky.social"
+          }
+        },
+        "required": ["handle", "appPassword"]
+      }
+    }
+  },
+  "activation": {
+    "onStartup": false
+  }
+}
