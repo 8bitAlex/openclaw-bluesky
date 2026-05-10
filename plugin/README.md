@@ -2,7 +2,7 @@
 
 OpenClaw channel plugin for [Bluesky](https://bsky.app) / AT Protocol.
 
-> **Status: scaffold.** The package layout, manifest, entry contract, and `ChannelPlugin` skeleton are in place. Outbound delivery and inbound notification polling are stubbed (`TODO(phase-3)`). See [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for the roadmap and [`../docs/PLUGIN_SDK.md`](../docs/PLUGIN_SDK.md) for the SDK research notes that this scaffold is built on.
+> **Status: Phase 3 — outbound + gateway implemented, untested against a live host.** Posting (with rich-text facets), reply threading, and notification polling are wired through the `ChannelOutboundAdapter` and `ChannelGatewayAdapter` send hooks. Typecheck and build are clean; structural smoke test passes. Live host integration is the next-session task. See [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for the roadmap and [`../docs/PLUGIN_SDK.md`](../docs/PLUGIN_SDK.md) for the SDK research this is built on.
 
 ## Layout
 
@@ -59,17 +59,24 @@ App passwords come from <https://bsky.app/settings/app-passwords>. The three sec
 ## What works today
 
 - Plugin loads via `defineBundledChannelEntry`.
-- `config.listAccountIds` / `config.resolveAccount` / `config.isConfigured` work against the config shape above (env-source secrets only — file/exec are deferred to Phase 3 runtime helpers).
-- `capabilities` advertise correct flags: DM + thread chat types, media, reply, threads, unsend.
-- `agent-pool.ts` performs real AT Proto login via `@atproto/api`.
-- `facets.ts` is a verified TypeScript port of the Python facet extractor (UTF-8-correct byte offsets).
+- `config.listAccountIds` / `config.resolveAccount` / `config.isConfigured` / `config.describeAccount`.
+- `capabilities` advertise: DM + thread chat types, reply, threads, unsend, reactions.
+- **`outbound.sendText`** — posts a skeet with rich-text facets (URLs, hashtags, mentions). Truncates to 300 chars. Threads via `replyToId`.
+- **`outbound.sendFormattedText`** — wraps `sendText` and returns the result array.
+- **`outbound.resolveTarget`** — accepts bare handles, `@handle`, `user:handle`, `did:plc:...`, and `at://` post URIs.
+- **`gateway.startAccount`** — polls `app.bsky.notification.listNotifications` every 30s, surfaces mentions/replies/quotes via `ctx.channelRuntime?.reply`, advances `seenAt`.
+- **`gateway.stopAccount`** — clears interval, evicts cached AtpAgent.
+- **Secret resolution** — uses the host's `openclaw/plugin-sdk/runtime-secret-resolution` resolver when available (env, file, exec). Falls back to env-only when running outside the host (tests, standalone).
+- `agent-pool.ts` — lazy login + session reuse, dedupes concurrent `getAgent` calls.
+- `facets.ts` — TypeScript port of the Python facet extractor, byte-equivalent output verified.
 
-## What's stubbed
+## What's stubbed / deferred
 
-- `outbound` — declares `deliveryMode: "direct"` only. The actual `agent.post(...)` call needs to be wired into the right delivery hook; the SDK's outbound shape is wider than I've fully traced. Phase 3.
-- `gateway.startAccount` — no-op. Phase 3 will poll `app.bsky.notification.listNotifications`.
-- File/exec secret resolution — throws "not yet implemented". Phase 3 plumbs it through the host's runtime secret resolver.
-- Setup wizard, status adapter, doctor — Phase 4+.
+- **Media uploads** (`sendMedia`, `sendFormattedMedia`) — needs Bluesky blob upload. Phase 5.
+- **Setup wizard** — config currently authored by hand. Phase 4.
+- **DM-style chat** — Bluesky's `chat.bsky.*` lexicon. Phase 5+.
+- **`status` / `doctor` adapters** — Phase 4 polish.
+- **Live host integration** — typecheck + structural smoke test pass, but no end-to-end test against an OpenClaw host install yet. That's the next-session validation step.
 
 ## Contributing
 

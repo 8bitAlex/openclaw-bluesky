@@ -1,31 +1,20 @@
 /**
  * The Bluesky ChannelPlugin object.
  *
- * Status: scaffold. `config.listAccountIds` and `config.resolveAccount` are
- * implemented against a placeholder config shape; `outbound` and `gateway`
- * are stubbed with TODO bodies. The full adapter contract is wide
- * (~25 optional adapters) — we'll fill in only what's needed as Phase 3
- * progresses. See ../../docs/PLUGIN_SDK.md for the contract.
+ * `ChannelPlugin` is not in the SDK's public exports — plugins build the
+ * object structurally and the host validates it via `loadChannelPlugin()`.
+ * See ../../docs/PLUGIN_SDK.md for the contract.
  */
-import type { BlueskyAccount, BlueskyAccountConfig, BlueskyChannelConfig, SecretRef } from "./account.js";
+import type { BlueskyAccount, BlueskyAccountConfig, BlueskyChannelConfig } from "./account.js";
+import { dispose } from "./agent-pool.js";
 import { extractFacets } from "./facets.js";
-import { dispose, getAgent } from "./agent-pool.js";
+import { startAccount as gatewayStart } from "./gateway.js";
+import { resolveBlueskyTarget, sendBlueskyText } from "./outbound.js";
 
 const DEFAULT_SERVICE = "https://bsky.social";
 
-function readChannelConfig(cfg: any): BlueskyChannelConfig {
-  return cfg?.channels?.bluesky ?? {};
-}
-
-function resolveSecret(value: string | SecretRef, env: NodeJS.ProcessEnv = process.env): string {
-  if (typeof value === "string") return value;
-  if (value.source === "env") {
-    const v = env[value.id];
-    if (!v) throw new Error(`bluesky: env var ${value.id} is unset`);
-    return v;
-  }
-  // file/exec sources: deferred to runtime helpers in Phase 3.
-  throw new Error(`bluesky: secret source "${value.source}" not yet implemented`);
+function readChannelConfig(cfg: unknown): BlueskyChannelConfig {
+  return ((cfg as { channels?: { bluesky?: BlueskyChannelConfig } })?.channels?.bluesky) ?? {};
 }
 
 function resolveAccountConfig(
@@ -35,14 +24,13 @@ function resolveAccountConfig(
   return {
     accountId,
     handle: raw.handle,
-    appPassword: resolveSecret(raw.appPassword),
+    appPassword: raw.appPassword, // SecretRef left unresolved until login
     service: raw.service ?? DEFAULT_SERVICE,
   };
 }
 
-// ChannelPlugin is not in the public-surface exports — plugins build the
-// object structurally, and the host validates it via `loadChannelPlugin()`.
-// We rely on inference here; runtime errors surface during host `registerChannel`.
+const handles: Map<string, { stop: () => void }> = new Map();
+
 export const blueskyPlugin = {
   id: "bluesky" as const,
 
@@ -59,7 +47,7 @@ export const blueskyPlugin = {
 
   capabilities: {
     chatTypes: ["dm", "thread"] as const,
-    media: true,
+    media: false, // Phase 5 — needs blob upload
     reactions: true,
     edit: false,
     unsend: true,
@@ -83,29 +71,80 @@ export const blueskyPlugin = {
     isConfigured(account: BlueskyAccount): boolean {
       return Boolean(account?.handle && account?.appPassword);
     },
+    describeAccount(account: BlueskyAccount): { id: string; label: string } {
+      return { id: account.accountId, label: `@${account.handle}` };
+    },
   },
 
   outbound: {
     deliveryMode: "direct" as const,
-    // TODO(phase-3): implement the actual delivery hook.
-    // The send-text path likely wires through `renderPresentation` /
-    // `beforeDeliverPayload`. Need to read more of outbound.types.d.ts and
-    // see how Discord's outbound is composed at runtime to know which hook
-    // is the right place to call `agent.post(...)`. For now this is a
-    // stub that advertises capabilities only.
+    textChunkLimit: 300,
+
+    resolveTarget(params: { to?: string }) {
+      return resolveBlueskyTarget(params);
+    },
+
+    async sendText(ctx: {
+      cfg: unknown;
+      to: string;
+      text: string;
+      replyToId?: string | null;
+      threadId?: string | number | null;
+      accountId?: string | null;
+    }) {
+      const channelCfg = readChannelConfig(ctx.cfg);
+      const id = ctx.accountId ?? Object.keys(channelCfg.accounts ?? {})[0];
+      if (!id || !channelCfg.accounts?.[id]) {
+        throw new Error("bluesky: no account available for sendText");
+      }
+      const account = resolveAccountConfig(id, channelCfg.accounts[id]);
+      return sendBlueskyText(ctx, account);
+    },
+
+    async sendFormattedText(ctx: {
+      cfg: unknown;
+      to: string;
+      text: string;
+      replyToId?: string | null;
+      threadId?: string | number | null;
+      accountId?: string | null;
+    }) {
+      const result = await this.sendText(ctx);
+      return [result];
+    },
   },
 
   gateway: {
-    // TODO(phase-3): poll `app.bsky.notification.listNotifications` on an
-    // interval, dispatch new mentions/replies/follows as channel events.
-    async startAccount(_ctx: { accountId: string; account: BlueskyAccount }): Promise<void> {
-      // no-op until Phase 3
+    async startAccount(ctx: {
+      accountId: string;
+      account: BlueskyAccount;
+      cfg: unknown;
+      abortSignal: AbortSignal;
+      log?: {
+        info?: (msg: string) => void;
+        warn?: (msg: string) => void;
+        error?: (msg: string) => void;
+      };
+      channelRuntime?: {
+        reply?: (params: {
+          channel: string;
+          accountId: string;
+          from: string;
+          text: string;
+          threadId?: string;
+        }) => Promise<void> | void;
+      };
+    }): Promise<{ stop: () => void }> {
+      const handle = await gatewayStart(ctx);
+      handles.set(ctx.accountId, handle);
+      return handle;
     },
     async stopAccount(ctx: { accountId: string }): Promise<void> {
+      handles.get(ctx.accountId)?.stop();
+      handles.delete(ctx.accountId);
       dispose(ctx.accountId);
     },
   },
 };
 
-// Re-export utilities the Phase 3 implementation will use.
-export { extractFacets, getAgent };
+export { extractFacets };

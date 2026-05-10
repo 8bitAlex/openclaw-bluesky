@@ -1,12 +1,12 @@
-/** Resolved Bluesky account — what config.resolveAccount() returns. */
+/** Resolved Bluesky account. `appPassword` is left as a SecretRef when the
+ *  config used a `{source, id}` ref — actual resolution happens at agent
+ *  login time so we can do async file/exec reads inside the runtime. */
 export type BlueskyAccount = {
   accountId: string;
   handle: string;
-  appPassword: string;
+  appPassword: string | SecretRef;
   /** PDS endpoint. Defaults to https://bsky.social. */
   service: string;
-  /** Resolved DID (cached after first login). */
-  did?: string;
 };
 
 export type BlueskyChannelConfig = {
@@ -25,3 +25,12 @@ export type SecretRef = {
   provider?: string;
   id: string;
 };
+
+export function isSecretRef(v: unknown): v is SecretRef {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as SecretRef).source === "string" &&
+    typeof (v as SecretRef).id === "string"
+  );
+}
