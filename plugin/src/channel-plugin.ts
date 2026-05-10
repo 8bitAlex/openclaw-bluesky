@@ -31,8 +31,6 @@ function resolveAccountConfig(
   };
 }
 
-const handles: Map<string, { stop: () => void }> = new Map();
-
 export const blueskyPlugin = {
   id: "bluesky" as const,
 
@@ -152,6 +150,11 @@ export const blueskyPlugin = {
   },
 
   gateway: {
+    /**
+     * Returns a promise that resolves only when ctx.abortSignal aborts
+     * — the host treats earlier resolution as "channel exited" and
+     * auto-restarts. See gateway.ts for the lifecycle contract.
+     */
     async startAccount(ctx: {
       accountId: string;
       account: BlueskyAccount;
@@ -171,14 +174,12 @@ export const blueskyPlugin = {
           threadId?: string;
         }) => Promise<void> | void;
       };
-    }): Promise<{ stop: () => void }> {
-      const handle = await gatewayStart(ctx);
-      handles.set(ctx.accountId, handle);
-      return handle;
+    }): Promise<void> {
+      await gatewayStart(ctx);
     },
     async stopAccount(ctx: { accountId: string }): Promise<void> {
-      handles.get(ctx.accountId)?.stop();
-      handles.delete(ctx.accountId);
+      // The host aborts ctx.abortSignal which lets startAccount resolve;
+      // we only need to clear the cached AtpAgent here.
       dispose(ctx.accountId);
     },
   },

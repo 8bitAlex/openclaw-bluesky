@@ -47,13 +47,18 @@ type GatewayCtx = {
   };
 };
 
-export async function startAccount(ctx: GatewayCtx): Promise<{ stop: () => void }> {
+/**
+ * The host treats the resolution of `startAccount`'s promise as "channel
+ * exited" and triggers an auto-restart with backoff. We must keep the
+ * promise pending for the lifetime of the channel — resolving only when
+ * `ctx.abortSignal` aborts (which is what `stopAccount` does).
+ */
+export async function startAccount(ctx: GatewayCtx): Promise<void> {
   const agent = await getAgent(ctx.account, ctx.cfg);
   let lastSeen = new Date().toISOString();
-  let stopped = false;
 
   const tick = async (): Promise<void> => {
-    if (stopped || ctx.abortSignal.aborted) return;
+    if (ctx.abortSignal.aborted) return;
     try {
       const res = await withRetry(() =>
         agent.app.bsky.notification.listNotifications({ limit: 50 }),
@@ -89,15 +94,24 @@ export async function startAccount(ctx: GatewayCtx): Promise<{ stop: () => void 
   const interval = setInterval(() => {
     void tick();
   }, DEFAULT_POLL_MS);
-  ctx.abortSignal.addEventListener("abort", () => {
-    stopped = true;
-    clearInterval(interval);
-  });
 
-  return {
-    stop: () => {
-      stopped = true;
+  ctx.log?.info?.(`bluesky: account ${ctx.accountId} started, polling every ${DEFAULT_POLL_MS}ms`);
+
+  // Keep the start promise pending for the channel's lifetime. The host
+  // aborts the signal via stopAccount; we resolve in response.
+  await new Promise<void>((resolve) => {
+    if (ctx.abortSignal.aborted) {
       clearInterval(interval);
-    },
-  };
+      resolve();
+      return;
+    }
+    ctx.abortSignal.addEventListener(
+      "abort",
+      () => {
+        clearInterval(interval);
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }
