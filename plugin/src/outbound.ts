@@ -15,8 +15,10 @@ import type { AtpAgent } from "@atproto/api";
 
 import type { BlueskyAccount } from "./account.js";
 import { getAgent } from "./agent-pool.js";
+import { fetchExternalCard } from "./embeds.js";
 import { extractFacets } from "./facets.js";
 import { buildImagesEmbed, type ImageInput, uploadImages } from "./media.js";
+import { withRetry } from "./retry.js";
 
 const POST_CHAR_LIMIT = 300;
 
@@ -31,6 +33,10 @@ type SendCtx = {
   mediaUrl?: string;
   /** Pre-loaded media buffer + alt text — used by sendMedia. */
   mediaBuffers?: Array<{ data: Buffer; mimeType: string; alt?: string }>;
+  /** Quote post — `at://` URI of the post being quoted. Internal extension. */
+  quoteOf?: string;
+  /** External link card — URL to fetch OpenGraph metadata from. Internal extension. */
+  externalLink?: string;
 };
 
 type SendResult = {
@@ -120,14 +126,33 @@ export async function sendBlueskyText(
     }
   }
   const uploaded = imageInputs.length > 0 ? await uploadImages(agent, imageInputs) : [];
-  const embed = uploaded.length > 0 ? buildImagesEmbed(uploaded) : undefined;
 
-  const res = await agent.post({
-    text,
-    ...(facets.length > 0 ? { facets: facets as never } : {}),
-    ...(replyRef ? { reply: replyRef } : {}),
-    ...(embed ? { embed: embed as never } : {}),
-  });
+  // Embed precedence: images > quote > external. Bluesky allows only one
+  // top-level embed; images+quote can combine via embed.recordWithMedia,
+  // which we'll add later if needed. For now, images win.
+  let embed: Record<string, unknown> | undefined;
+  if (uploaded.length > 0) {
+    embed = buildImagesEmbed(uploaded);
+  } else if (ctx.quoteOf) {
+    const quoted = await withRetry(() => agent.getPosts({ uris: [ctx.quoteOf!] }));
+    const post = quoted.data.posts[0];
+    if (!post) throw new Error(`bluesky: quote target not found: ${ctx.quoteOf}`);
+    embed = {
+      $type: "app.bsky.embed.record",
+      record: { uri: post.uri, cid: post.cid },
+    };
+  } else if (ctx.externalLink) {
+    embed = await fetchExternalCard(agent, ctx.externalLink);
+  }
+
+  const res = await withRetry(() =>
+    agent.post({
+      text,
+      ...(facets.length > 0 ? { facets: facets as never } : {}),
+      ...(replyRef ? { reply: replyRef } : {}),
+      ...(embed ? { embed: embed as never } : {}),
+    }),
+  );
 
   return {
     channel: "bluesky",

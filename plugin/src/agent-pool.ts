@@ -9,6 +9,7 @@
 import { AtpAgent } from "@atproto/api";
 
 import type { BlueskyAccount } from "./account.js";
+import { withRetry } from "./retry.js";
 import { resolveSecret } from "./secrets.js";
 
 const agents = new Map<string, AtpAgent>();
@@ -24,7 +25,7 @@ export async function getAgent(account: BlueskyAccount, cfg: unknown): Promise<A
   const promise = (async () => {
     const password = await resolveSecret(account.appPassword, { config: cfg });
     const agent = new AtpAgent({ service: account.service });
-    await agent.login({ identifier: account.handle, password });
+    await withRetry(() => agent.login({ identifier: account.handle, password }));
     agents.set(account.accountId, agent);
     return agent;
   })().finally(() => {

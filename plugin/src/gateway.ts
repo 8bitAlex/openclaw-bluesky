@@ -16,6 +16,7 @@ import type { AppBskyNotificationListNotifications } from "@atproto/api";
 
 import type { BlueskyAccount } from "./account.js";
 import { getAgent } from "./agent-pool.js";
+import { withRetry } from "./retry.js";
 
 const DEFAULT_POLL_MS = 30_000;
 const RELEVANT_REASONS = new Set([
@@ -54,7 +55,9 @@ export async function startAccount(ctx: GatewayCtx): Promise<{ stop: () => void 
   const tick = async (): Promise<void> => {
     if (stopped || ctx.abortSignal.aborted) return;
     try {
-      const res = await agent.app.bsky.notification.listNotifications({ limit: 50 });
+      const res = await withRetry(() =>
+        agent.app.bsky.notification.listNotifications({ limit: 50 }),
+      );
       const fresh: Notification[] = [];
       for (const n of res.data.notifications) {
         if (!RELEVANT_REASONS.has(n.reason)) continue;
@@ -76,7 +79,7 @@ export async function startAccount(ctx: GatewayCtx): Promise<{ stop: () => void 
           ctx.log?.info?.(`bluesky: ${n.reason} from @${n.author.handle}`);
         }
         lastSeen = fresh[fresh.length - 1]!.indexedAt;
-        await agent.app.bsky.notification.updateSeen({ seenAt: lastSeen });
+        await withRetry(() => agent.app.bsky.notification.updateSeen({ seenAt: lastSeen }));
       }
     } catch (err) {
       ctx.log?.warn?.(`bluesky: poll error: ${(err as Error).message}`);

@@ -6,6 +6,7 @@
  */
 import type { BlueskyAccount } from "./account.js";
 import { getAgent } from "./agent-pool.js";
+import { withRetry } from "./retry.js";
 
 export type BlueskyProbe = {
   did: string;
@@ -33,7 +34,7 @@ export async function probeAccount({
   ]);
   const me = agent.session?.did;
   if (!me) throw new Error("bluesky: no session DID after login");
-  const profile = await agent.getProfile({ actor: me });
+  const profile = await withRetry(() => agent.getProfile({ actor: me }));
   return {
     did: profile.data.did,
     handle: profile.data.handle,

@@ -13,6 +13,8 @@ import type { AtpAgent, BlobRef } from "@atproto/api";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 
+import { withRetry } from "./retry.js";
+
 export const MAX_IMAGES_PER_POST = 4;
 export const MAX_IMAGE_BYTES = 1_000_000;
 
@@ -78,7 +80,7 @@ export async function uploadImage(
       `bluesky: image is ${data.byteLength} bytes; Bluesky limit is ${MAX_IMAGE_BYTES} (1 MB)`,
     );
   }
-  const res = await agent.uploadBlob(data, { encoding: mimeType });
+  const res = await withRetry(() => agent.uploadBlob(data, { encoding: mimeType }));
   return {
     blob: res.data.blob,
     alt: input.alt ?? "",

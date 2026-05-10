@@ -77,6 +77,9 @@ App passwords come from <https://bsky.app/settings/app-passwords>. The three sec
 - **`setup` adapter** — `openclaw channels add bluesky --userId you.bsky.social --password xxxx-xxxx-xxxx-xxxx [--name <accountId>] [--url <pds>]` writes the config block correctly (top-level for default, nested under `accounts.<id>` for named). Validates handle dot-form and password presence.
 - **`status.probeAccount`** — exercises auth by calling `getProfile(self)`; reports handle, DID, follower/following/post counts in summaries.
 - **`doctor.collectPreviewWarnings`** — flags missing/malformed handles and literal passwords that don't match the Bluesky app-password shape (`xxxx-xxxx-xxxx-xxxx`).
+- **Quote posts** (`app.bsky.embed.record`) — pass `quoteOf: at://...` in the internal `SendCtx` to embed another post.
+- **External link cards** (`app.bsky.embed.external`) — pass `externalLink: <url>` to fetch OpenGraph metadata (title, description, image) and embed a link card. Image upload + thumbnail attached when available, gracefully degrades when not.
+- **Rate-limit handling** — every AT-Proto API call (`login`, `post`, `getPosts`, `uploadBlob`, `getProfile`, `listNotifications`, `updateSeen`) is wrapped in a retry helper that honors `Retry-After`, retries 429/5xx with capped exponential backoff + jitter, and lets non-retryable errors (auth, validation) propagate immediately.
 
 ## What's deferred
 
