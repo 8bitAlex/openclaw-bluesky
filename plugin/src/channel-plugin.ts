@@ -10,6 +10,8 @@ import { dispose } from "./agent-pool.js";
 import { extractFacets } from "./facets.js";
 import { startAccount as gatewayStart } from "./gateway.js";
 import { resolveBlueskyTarget, sendBlueskyMedia, sendBlueskyText } from "./outbound.js";
+import { applyAccountConfig, resolveAccountId, validateInput } from "./setup.js";
+import { buildChannelSummary, collectPreviewWarnings, probeAccount } from "./status.js";
 
 const DEFAULT_SERVICE = "https://bsky.social";
 
@@ -132,6 +134,21 @@ export const blueskyPlugin = {
       const account = blueskyPlugin.config.resolveAccount(ctx.cfg, ctx.accountId);
       return sendBlueskyMedia(ctx, account);
     },
+  },
+
+  setup: {
+    validateInput,
+    resolveAccountId,
+    applyAccountConfig,
+  },
+
+  status: {
+    probeAccount,
+    buildChannelSummary,
+  },
+
+  doctor: {
+    collectPreviewWarnings,
   },
 
   gateway: {

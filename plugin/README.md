@@ -74,12 +74,15 @@ App passwords come from <https://bsky.app/settings/app-passwords>. The three sec
 - **Tests** — vitest suite (`npm test`) covers facet extraction, target resolution, and media validation. 23 tests in `plugin/test/`.
 - **Live host install verified** — `openclaw plugins install --link plugin/` registers the plugin, doctor reports 0 errors, end-to-end post via `outbound.sendText` succeeds against the real Bluesky API.
 
+- **`setup` adapter** — `openclaw channels add bluesky --userId you.bsky.social --password xxxx-xxxx-xxxx-xxxx [--name <accountId>] [--url <pds>]` writes the config block correctly (top-level for default, nested under `accounts.<id>` for named). Validates handle dot-form and password presence.
+- **`status.probeAccount`** — exercises auth by calling `getProfile(self)`; reports handle, DID, follower/following/post counts in summaries.
+- **`doctor.collectPreviewWarnings`** — flags missing/malformed handles and literal passwords that don't match the Bluesky app-password shape (`xxxx-xxxx-xxxx-xxxx`).
+
 ## What's deferred
 
-- **Setup wizard** — config currently authored by hand. Phase 6.
-- **`status` / `doctor` adapters** — Phase 6.
 - **DM-style chat** — Bluesky's `chat.bsky.*` lexicon. Phase 7+.
-- **Video / external link cards / quote posts** — incremental polish.
+- **Video uploads / external link cards / quote posts** — incremental polish.
+- **Custom feeds / list management** — beyond agent posting use cases.
 
 ## Contributing
 
