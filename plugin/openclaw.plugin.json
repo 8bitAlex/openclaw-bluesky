@@ -1,6 +1,11 @@
 {
   "$schema": "https://docs.openclaw.ai/schemas/plugin.json",
   "id": "bluesky",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
   "channels": ["bluesky"],
   "channelEnvVars": {
     "bluesky": ["BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"]
@@ -8,10 +13,12 @@
   "channelConfigs": {
     "bluesky": {
       "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
         "title": "Bluesky channel",
         "description": "AT Protocol account credentials. Use an app password from https://bsky.app/settings/app-passwords.",
         "properties": {
+          "enabled": { "type": "boolean" },
           "handle": {
             "type": "string",
             "title": "Handle",
@@ -21,7 +28,7 @@
           "appPassword": {
             "title": "App password",
             "description": "App password (NOT your account password). Create one at https://bsky.app/settings/app-passwords.",
-            "anyOf": [
+            "oneOf": [
               { "type": "string" },
               {
                 "type": "object",
@@ -30,7 +37,8 @@
                   "provider": { "type": "string" },
                   "id": { "type": "string" }
                 },
-                "required": ["source", "id"]
+                "required": ["source", "id"],
+                "additionalProperties": false
               }
             ]
           },
@@ -39,9 +47,38 @@
             "title": "PDS service URL",
             "description": "AT Protocol service endpoint. Defaults to the public Bluesky PDS.",
             "default": "https://bsky.social"
+          },
+          "accounts": {
+            "type": "object",
+            "description": "Multi-account overrides keyed by accountId. Each account follows the same shape as the top-level fields.",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "handle": { "type": "string" },
+                "appPassword": {
+                  "oneOf": [
+                    { "type": "string" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "source": { "enum": ["env", "file", "exec"] },
+                        "provider": { "type": "string" },
+                        "id": { "type": "string" }
+                      },
+                      "required": ["source", "id"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "service": { "type": "string" },
+                "enabled": { "type": "boolean" }
+              },
+              "required": ["handle", "appPassword"]
+            }
           }
         },
-        "required": ["handle", "appPassword"]
+        "required": ["handle", "appPassword"],
+        "additionalProperties": false
       }
     }
   },

@@ -58,12 +58,24 @@ export const blueskyPlugin = {
   config: {
     listAccountIds(cfg: unknown): string[] {
       const channelCfg = readChannelConfig(cfg);
-      return Object.keys(channelCfg.accounts ?? {});
+      const ids = Object.keys(channelCfg.accounts ?? {});
+      if (channelCfg.handle && channelCfg.appPassword && !ids.includes("default")) {
+        ids.unshift("default");
+      }
+      return ids;
     },
     resolveAccount(cfg: unknown, accountId?: string | null): BlueskyAccount {
       const channelCfg = readChannelConfig(cfg);
-      const id = accountId ?? Object.keys(channelCfg.accounts ?? {})[0];
-      if (!id) throw new Error("bluesky: no accounts configured");
+      const id = accountId ?? "default";
+      // Top-level fields define the implicit "default" account.
+      if (id === "default" && channelCfg.handle && channelCfg.appPassword) {
+        return {
+          accountId: "default",
+          handle: channelCfg.handle,
+          appPassword: channelCfg.appPassword,
+          service: channelCfg.service ?? DEFAULT_SERVICE,
+        };
+      }
       const raw = channelCfg.accounts?.[id];
       if (!raw) throw new Error(`bluesky: unknown accountId "${id}"`);
       return resolveAccountConfig(id, raw);
@@ -92,12 +104,7 @@ export const blueskyPlugin = {
       threadId?: string | number | null;
       accountId?: string | null;
     }) {
-      const channelCfg = readChannelConfig(ctx.cfg);
-      const id = ctx.accountId ?? Object.keys(channelCfg.accounts ?? {})[0];
-      if (!id || !channelCfg.accounts?.[id]) {
-        throw new Error("bluesky: no account available for sendText");
-      }
-      const account = resolveAccountConfig(id, channelCfg.accounts[id]);
+      const account = blueskyPlugin.config.resolveAccount(ctx.cfg, ctx.accountId);
       return sendBlueskyText(ctx, account);
     },
 

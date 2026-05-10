@@ -11,27 +11,57 @@ type ResolveOptions = {
   env?: NodeJS.ProcessEnv;
 };
 
-let cached:
-  | ((ref: SecretRef, opts: ResolveOptions) => Promise<string>)
-  | null
-  | undefined;
+type HostBatchResolver = (
+  refs: SecretRef[],
+  options: { config: unknown; env?: NodeJS.ProcessEnv },
+) => Promise<Map<string, unknown>>;
 
-async function loadHostResolver(): Promise<
-  ((ref: SecretRef, opts: ResolveOptions) => Promise<string>) | null
-> {
+let cached: HostBatchResolver | null | undefined;
+
+function refKey(ref: SecretRef): string {
+  return `${ref.source}:${ref.provider ?? "openclaw"}:${ref.id}`;
+}
+
+async function loadHostResolver(): Promise<HostBatchResolver | null> {
   if (cached !== undefined) return cached;
   try {
     const mod = await import("openclaw/plugin-sdk/runtime-secret-resolution");
-    const fn = (mod as { resolveSecretRefString?: unknown }).resolveSecretRefString;
+    const fn = (mod as { resolveSecretRefValues?: unknown }).resolveSecretRefValues;
     if (typeof fn === "function") {
-      cached = fn as (ref: SecretRef, opts: ResolveOptions) => Promise<string>;
+      cached = fn as HostBatchResolver;
       return cached;
     }
   } catch {
-    // host runtime not available — fall through to env-only
+    // host runtime not available — fall through
   }
   cached = null;
   return null;
+}
+
+async function resolveLocal(
+  ref: SecretRef,
+  env: NodeJS.ProcessEnv,
+): Promise<string> {
+  if (ref.source === "env") {
+    const v = env[ref.id];
+    if (!v) throw new Error(`bluesky: env var ${ref.id} is unset`);
+    return v;
+  }
+  if (ref.source === "exec") {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const run = promisify(execFile);
+    const parts = ref.id.split(/\s+/);
+    const cmd = parts[0];
+    if (!cmd) throw new Error("bluesky: empty exec command");
+    const { stdout } = await run(cmd, parts.slice(1), { encoding: "utf8" });
+    return stdout.trim();
+  }
+  if (ref.source === "file") {
+    const { readFile } = await import("node:fs/promises");
+    return (await readFile(ref.id, "utf8")).trim();
+  }
+  throw new Error(`bluesky: unknown secret source "${(ref as SecretRef).source}"`);
 }
 
 export async function resolveSecret(
@@ -44,17 +74,15 @@ export async function resolveSecret(
   }
 
   const host = await loadHostResolver();
-  if (host) return host(value, opts);
-
-  // Fallback: env-only resolver. file/exec require the host runtime.
-  if (value.source === "env") {
-    const env = opts.env ?? process.env;
-    const v = env[value.id];
-    if (!v) throw new Error(`bluesky: env var ${value.id} is unset`);
-    return v;
+  if (host) {
+    try {
+      const map = await host([value], { config: opts.config, env: opts.env });
+      const out = map.get(refKey(value)) ?? map.values().next().value;
+      if (typeof out === "string") return out;
+    } catch {
+      // host resolver path failed — fall through to local resolution
+    }
   }
-  throw new Error(
-    `bluesky: secret source "${value.source}" requires the OpenClaw host runtime ` +
-      `(openclaw/plugin-sdk/runtime-secret-resolution); not available in this context`,
-  );
+
+  return resolveLocal(value, opts.env ?? process.env);
 }

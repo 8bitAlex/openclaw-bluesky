@@ -9,7 +9,13 @@ export type BlueskyAccount = {
   service: string;
 };
 
+/** Channel config — top-level fields define the implicit `default` account.
+ *  Multi-account support via `accounts.<id>` is a future extension. */
 export type BlueskyChannelConfig = {
+  enabled?: boolean;
+  handle?: string;
+  appPassword?: string | SecretRef;
+  service?: string;
   accounts?: Record<string, BlueskyAccountConfig>;
 };
 
