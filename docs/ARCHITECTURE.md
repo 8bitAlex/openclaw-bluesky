@@ -36,7 +36,7 @@ Two non-obvious gotchas we caught here:
 ### Phase 5 — Media + tests + CI ✅
 
 - `outbound.sendMedia` — uploads images to Bluesky's blob store and embeds them as `app.bsky.embed.images`. 4 images / 1 MB each / JPEG-PNG-WebP-GIF. Accepts URLs, file paths, or pre-loaded buffers; alt text supported.
-- `vitest` suite — 42 tests across `facets`, `outbound`, `media`, `setup`, `status`. All passing.
+- `vitest` suite — initial coverage across `facets`, `outbound`, `media`, `setup`, `status`.
 - GitHub Actions workflow — matrix builds plugin (Node 20/22) and CLI (Python 3.10/3.12) on every push.
 
 ### Phase 6 — Setup wizard, status, doctor ✅
@@ -45,19 +45,20 @@ Two non-obvious gotchas we caught here:
 - `status.probeAccount` — calls `getProfile(self)` to verify auth; surfaces handle, DID, follower/following/post counts.
 - `doctor.collectPreviewWarnings` — flags missing/malformed handles and literal app passwords that don't match Bluesky's `xxxx-xxxx-xxxx-xxxx` shape.
 
-### Phase 7 — Pre-1.0 polish (in progress)
+### Phase 7 — Pre-1.0 polish ✅
 
-- DM-style chat via `chat.bsky.*` lexicon — required for true direct messaging vs. public mention-style posts.
-- Video uploads (`app.bsky.embed.video`).
-- External link cards (`app.bsky.embed.external` with OpenGraph fetch).
-- Quote posts (`app.bsky.embed.record`).
-- 429 / `Retry-After` handling — the AT Proto SDK doesn't surface this cleanly; plugin should backoff and propagate as channel backpressure.
+- **Quote posts** — `app.bsky.embed.record` referencing the parent CID. Internal `SendCtx.quoteOf: at://...` field.
+- **External link cards** — `app.bsky.embed.external` with OpenGraph parser (entity-decoded, single/double/unquoted attribute forms), thumbnail blob upload when available, graceful degradation when not.
+- **`recordWithMedia`** — combines image embeds with a quoted record; the only Bluesky-supported path for image+quote.
+- **AT-Proto-aware retry** — `withRetry` wraps every API call (`login`, `post`, `getPosts`, `uploadBlob`, `getProfile`, `listNotifications`, `updateSeen`); honors `Retry-After` (seconds or HTTP-date), retries 429/5xx with capped exponential backoff + ±12.5% jitter, propagates 4xx auth/validation errors immediately.
+- **Test coverage expanded to 64** across `facets`, `outbound`, `media`, `setup`, `status`, `retry`, `embeds`.
 
-### Phase 8 — Release
+### Phase 8 — Release (pending)
 
 - npm publish on tag (`@8bitalex/openclaw-bluesky`).
 - Submit to upstream OpenClaw plugin index so it shows up in `npm search @openclaw` and the CLI's `openclaw plugins search`.
-- Docs site or expanded README with example agent prompts.
+- Full message-tool dispatch verification via `sessions_spawn` round-trip (requires gateway restart).
+- Optional: video uploads (`app.bsky.embed.video`), DM lexicon (`chat.bsky.*`), docs site.
 
 ## Design notes
 
@@ -71,7 +72,7 @@ The plugin accepts either in `to:`. Handles get resolved → DID at send time in
 
 ### Rate limits
 
-AT Proto rate limits are per-PDS and fairly generous, but a chatty agent could hit them. Phase 7 will add `Retry-After` honoring; today the plugin lets atproto-api errors surface to the host.
+AT Proto rate limits are per-PDS and fairly generous, but a chatty agent can hit them. The plugin's `withRetry` helper (`src/retry.ts`) wraps every API call, honors `Retry-After`, and uses capped exponential backoff with jitter for 429/5xx. Non-retryable errors (auth, validation) surface immediately to the host.
 
 ### Why TypeScript, not Python
 

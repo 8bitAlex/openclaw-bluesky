@@ -2,34 +2,62 @@
 
 A Bluesky / AT Protocol channel for [OpenClaw](https://github.com/openclaw/openclaw) agents. Lets your OpenClaw agent post, read, and respond on Bluesky through the standard `message` tool with `channel=bluesky`.
 
-> **Status:** early. The Python CLI in [`cli/`](cli/) is working and usable today. The TypeScript OpenClaw plugin in [`plugin/`](plugin/) is planned — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the roadmap.
+> **Status:** plugin is end-to-end working — verified against a live OpenClaw host (link-installed, 0 doctor errors, real skeet posted via `outbound.sendText`). Pre-1.0; Phase 8 (npm publish + upstream listing) is the remaining work. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the roadmap.
 
 ## Components
 
-| Path        | What it is                                            | Status           |
-| ----------- | ----------------------------------------------------- | ---------------- |
-| [`cli/`]    | Standalone Python CLI (`bsky` command). Works without OpenClaw — useful for scripts, cron, agent Bash calls. | working          |
-| [`plugin/`] | TypeScript OpenClaw channel plugin (`@8bitalex/openclaw-bluesky` on npm). | not started      |
-| [`docs/`]   | Architecture, design notes, plugin SDK research.       | in progress      |
+| Path | What it is | Status |
+| --- | --- | --- |
+| [`cli/`](cli/) | Standalone Python CLI (`bsky` command). Works without OpenClaw — useful for scripts, cron, agent Bash calls. | working |
+| [`plugin/`](plugin/) | TypeScript OpenClaw channel plugin (`@8bitalex/openclaw-bluesky`). | working, unpublished |
+| [`docs/`](docs/) | Architecture, design notes, plugin SDK research. | up to date |
+| [`raid.yaml`](raid.yaml) | Dev workflow commands runnable via [raid](https://raidcli.dev). | — |
 
-[`cli/`]: cli/
-[`plugin/`]: plugin/
-[`docs/`]: docs/
+## Plugin features
 
-## Quick start (CLI)
+Posting (with rich-text facets — URLs, hashtags, mentions resolved to DIDs), threaded replies, image embeds (up to 4 per post), quote posts, external link cards (with OpenGraph fetch + thumbnail), `recordWithMedia` for image+quote combos, notification polling for mentions/replies/quotes, AT-Proto-aware retry with `Retry-After` honoring, secret resolution via env/file/exec (the host's resolver when available, native local fallback otherwise). Setup wizard, status probe, and doctor warnings are wired into the host's CLI.
 
-See [`cli/README.md`](cli/README.md). Two-line summary:
+## Quick start
+
+### Standalone CLI
 
 ```bash
-# Generate an app password at https://bsky.app/settings/app-passwords
-cli/install.sh   # creates venv, stores creds in gnome-keyring, installs `bsky` to ~/.local/bin/
+git clone https://github.com/8bitAlex/openclaw-bluesky.git
+cd openclaw-bluesky
+./cli/install.sh             # creates venv, prompts for handle + app password, stores in keyring
 bsky whoami
 bsky post "hello from the CLI"
 ```
 
+App passwords come from <https://bsky.app/settings/app-passwords>. See [`cli/README.md`](cli/README.md) for full subcommands.
+
+### OpenClaw plugin (link-install)
+
+```bash
+cd plugin && npm install && npm run build
+openclaw plugins install --link .
+openclaw channels add bluesky \
+  --userId you.bsky.social \
+  --password xxxx-xxxx-xxxx-xxxx
+openclaw doctor              # should report 0 errors
+# restart the gateway to load the plugin
+```
+
+The plugin then handles `message`-tool calls with `channel: "bluesky"` — see [`plugin/README.md`](plugin/README.md).
+
+### Dev tasks via raid
+
+```bash
+raid ci               # typecheck + build + test
+raid install-plugin   # build then link-install into local OpenClaw
+raid doctor           # openclaw doctor, filtered to bluesky-relevant lines
+```
+
+Full command list in [`raid.yaml`](raid.yaml).
+
 ## Why a separate channel plugin
 
-OpenClaw channels (Discord, Slack, Telegram, etc.) are discovered through a plugin manifest and routed through the generic `message` tool. Adding Bluesky as a first-class channel — rather than a one-off skill — means agents can address Bluesky users and posts the same way they address any other channel: `to: "user:<did>"` or `to: "thread:<post-uri>"`, with `channel: "bluesky"`.
+OpenClaw channels (Discord, Slack, Telegram, etc.) are discovered through a plugin manifest and routed through the generic `message` tool. Adding Bluesky as a first-class channel — rather than a one-off skill — means agents can address Bluesky users and posts the same way they address any other channel: `to: "user:<handle-or-did>"` or `to: "at://..."` for thread replies, with `channel: "bluesky"`.
 
 ## License
 

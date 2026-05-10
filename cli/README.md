@@ -65,6 +65,10 @@ secret-tool clear service openclaw origin bluesky type app-password
 secret-tool clear service openclaw origin bluesky type handle
 ```
 
-## Limitations
+## CLI vs plugin features
 
-Today the CLI only does plain-text posting and reading. Not yet supported: image/video uploads, external link cards, quote posts, custom feeds, list management, repost. See the project [roadmap](../docs/ARCHITECTURE.md).
+The standalone CLI is intentionally minimal — text posting, replies, likes, deletes, timeline/notification reads. The richer surface (image embeds, quote posts, OpenGraph link cards, `recordWithMedia` combos, AT-Proto-aware retry, multi-account routing) lives in the OpenClaw plugin under [`../plugin/`](../plugin/), which agents can drive via the standard `message` tool. Both share the same facet-extraction logic for clickable URLs, hashtags, and mentions.
+
+## CLI limitations
+
+Not yet supported in the CLI: image/video uploads, external link cards, quote posts, custom feeds, list management, repost. See the project [roadmap](../docs/ARCHITECTURE.md). PRs welcome — the plugin's TypeScript implementation has byte-equivalent facet logic and reference patterns for blob uploads.
