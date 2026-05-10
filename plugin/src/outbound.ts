@@ -127,20 +127,31 @@ export async function sendBlueskyText(
   }
   const uploaded = imageInputs.length > 0 ? await uploadImages(agent, imageInputs) : [];
 
-  // Embed precedence: images > quote > external. Bluesky allows only one
-  // top-level embed; images+quote can combine via embed.recordWithMedia,
-  // which we'll add later if needed. For now, images win.
+  // Bluesky allows exactly one top-level embed. Combinations:
+  //   images + quote      -> app.bsky.embed.recordWithMedia
+  //   images alone        -> app.bsky.embed.images
+  //   quote alone         -> app.bsky.embed.record
+  //   external alone      -> app.bsky.embed.external
+  //   external + (images|quote) -> external is dropped (no equivalent combo)
   let embed: Record<string, unknown> | undefined;
-  if (uploaded.length > 0) {
-    embed = buildImagesEmbed(uploaded);
-  } else if (ctx.quoteOf) {
+  let quoteRecord: { uri: string; cid: string } | undefined;
+  if (ctx.quoteOf) {
     const quoted = await withRetry(() => agent.getPosts({ uris: [ctx.quoteOf!] }));
     const post = quoted.data.posts[0];
     if (!post) throw new Error(`bluesky: quote target not found: ${ctx.quoteOf}`);
+    quoteRecord = { uri: post.uri, cid: post.cid };
+  }
+
+  if (uploaded.length > 0 && quoteRecord) {
     embed = {
-      $type: "app.bsky.embed.record",
-      record: { uri: post.uri, cid: post.cid },
+      $type: "app.bsky.embed.recordWithMedia",
+      record: { record: quoteRecord },
+      media: buildImagesEmbed(uploaded),
     };
+  } else if (uploaded.length > 0) {
+    embed = buildImagesEmbed(uploaded);
+  } else if (quoteRecord) {
+    embed = { $type: "app.bsky.embed.record", record: quoteRecord };
   } else if (ctx.externalLink) {
     embed = await fetchExternalCard(agent, ctx.externalLink);
   }
