@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / TS
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.npm/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local state — never commit auth artifacts
+session.txt
+*.session
+.env
+.env.local
+secrets/
