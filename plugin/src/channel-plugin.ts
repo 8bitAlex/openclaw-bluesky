@@ -9,7 +9,7 @@ import type { BlueskyAccount, BlueskyAccountConfig, BlueskyChannelConfig } from 
 import { dispose } from "./agent-pool.js";
 import { extractFacets } from "./facets.js";
 import { startAccount as gatewayStart } from "./gateway.js";
-import { resolveBlueskyTarget, sendBlueskyText } from "./outbound.js";
+import { resolveBlueskyTarget, sendBlueskyMedia, sendBlueskyText } from "./outbound.js";
 
 const DEFAULT_SERVICE = "https://bsky.social";
 
@@ -47,7 +47,7 @@ export const blueskyPlugin = {
 
   capabilities: {
     chatTypes: ["dm", "thread"] as const,
-    media: false, // Phase 5 — needs blob upload
+    media: true,
     reactions: true,
     edit: false,
     unsend: true,
@@ -118,6 +118,19 @@ export const blueskyPlugin = {
     }) {
       const result = await this.sendText(ctx);
       return [result];
+    },
+
+    async sendMedia(ctx: {
+      cfg: unknown;
+      to: string;
+      text: string;
+      mediaUrl?: string;
+      replyToId?: string | null;
+      threadId?: string | number | null;
+      accountId?: string | null;
+    }) {
+      const account = blueskyPlugin.config.resolveAccount(ctx.cfg, ctx.accountId);
+      return sendBlueskyMedia(ctx, account);
     },
   },
 

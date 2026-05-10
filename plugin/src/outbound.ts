@@ -16,6 +16,7 @@ import type { AtpAgent } from "@atproto/api";
 import type { BlueskyAccount } from "./account.js";
 import { getAgent } from "./agent-pool.js";
 import { extractFacets } from "./facets.js";
+import { buildImagesEmbed, type ImageInput, uploadImages } from "./media.js";
 
 const POST_CHAR_LIMIT = 300;
 
@@ -26,6 +27,10 @@ type SendCtx = {
   replyToId?: string | null;
   threadId?: string | number | null;
   accountId?: string | null;
+  /** Single media URL — populated by OpenClaw's outbound dispatch. */
+  mediaUrl?: string;
+  /** Pre-loaded media buffer + alt text — used by sendMedia. */
+  mediaBuffers?: Array<{ data: Buffer; mimeType: string; alt?: string }>;
 };
 
 type SendResult = {
@@ -106,10 +111,22 @@ export async function sendBlueskyText(
     void did;
   }
 
+  // Assemble image inputs (URL or pre-loaded buffer).
+  const imageInputs: ImageInput[] = [];
+  if (ctx.mediaUrl) imageInputs.push({ kind: "url", url: ctx.mediaUrl });
+  if (ctx.mediaBuffers) {
+    for (const m of ctx.mediaBuffers) {
+      imageInputs.push({ kind: "buffer", data: m.data, mimeType: m.mimeType, alt: m.alt });
+    }
+  }
+  const uploaded = imageInputs.length > 0 ? await uploadImages(agent, imageInputs) : [];
+  const embed = uploaded.length > 0 ? buildImagesEmbed(uploaded) : undefined;
+
   const res = await agent.post({
     text,
     ...(facets.length > 0 ? { facets: facets as never } : {}),
     ...(replyRef ? { reply: replyRef } : {}),
+    ...(embed ? { embed: embed as never } : {}),
   });
 
   return {
@@ -117,6 +134,16 @@ export async function sendBlueskyText(
     messageId: res.uri,
     meta: { cid: res.cid },
   };
+}
+
+export async function sendBlueskyMedia(
+  ctx: SendCtx,
+  account: BlueskyAccount,
+): Promise<SendResult> {
+  if (!ctx.mediaUrl && !ctx.mediaBuffers?.length) {
+    throw new Error("bluesky: sendMedia called without mediaUrl or mediaBuffers");
+  }
+  return sendBlueskyText(ctx, account);
 }
 
 export function resolveBlueskyTarget(params: {

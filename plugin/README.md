@@ -2,7 +2,7 @@
 
 OpenClaw channel plugin for [Bluesky](https://bsky.app) / AT Protocol.
 
-> **Status: Phase 3 — outbound + gateway implemented, untested against a live host.** Posting (with rich-text facets), reply threading, and notification polling are wired through the `ChannelOutboundAdapter` and `ChannelGatewayAdapter` send hooks. Typecheck and build are clean; structural smoke test passes. Live host integration is the next-session task. See [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for the roadmap and [`../docs/PLUGIN_SDK.md`](../docs/PLUGIN_SDK.md) for the SDK research this is built on.
+> **Status: end-to-end working.** Posts (with rich-text facets), threaded replies, image uploads, and notification polling are wired through the `ChannelOutboundAdapter` / `ChannelGatewayAdapter` hooks. Verified against a live OpenClaw host: link-installed via `openclaw plugins install --link`, doctor reports 0 errors, and the outbound path posted a real skeet end-to-end (config → exec-source secret → agent-pool login → atproto post). 23 unit tests pass. See [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for the roadmap and [`../docs/PLUGIN_SDK.md`](../docs/PLUGIN_SDK.md) for the SDK research this is built on.
 
 ## Layout
 
@@ -70,13 +70,16 @@ App passwords come from <https://bsky.app/settings/app-passwords>. The three sec
 - `agent-pool.ts` — lazy login + session reuse, dedupes concurrent `getAgent` calls.
 - `facets.ts` — TypeScript port of the Python facet extractor, byte-equivalent output verified.
 
-## What's stubbed / deferred
+- **`outbound.sendMedia`** — uploads images to Bluesky's blob store and embeds them as `app.bsky.embed.images`. Up to 4 images per post, 1 MB each, JPEG/PNG/WebP/GIF. Accepts URLs, file paths, or pre-loaded buffers; alt text supported.
+- **Tests** — vitest suite (`npm test`) covers facet extraction, target resolution, and media validation. 23 tests in `plugin/test/`.
+- **Live host install verified** — `openclaw plugins install --link plugin/` registers the plugin, doctor reports 0 errors, end-to-end post via `outbound.sendText` succeeds against the real Bluesky API.
 
-- **Media uploads** (`sendMedia`, `sendFormattedMedia`) — needs Bluesky blob upload. Phase 5.
-- **Setup wizard** — config currently authored by hand. Phase 4.
-- **DM-style chat** — Bluesky's `chat.bsky.*` lexicon. Phase 5+.
-- **`status` / `doctor` adapters** — Phase 4 polish.
-- **Live host integration** — typecheck + structural smoke test pass, but no end-to-end test against an OpenClaw host install yet. That's the next-session validation step.
+## What's deferred
+
+- **Setup wizard** — config currently authored by hand. Phase 6.
+- **`status` / `doctor` adapters** — Phase 6.
+- **DM-style chat** — Bluesky's `chat.bsky.*` lexicon. Phase 7+.
+- **Video / external link cards / quote posts** — incremental polish.
 
 ## Contributing
 
