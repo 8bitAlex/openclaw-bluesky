@@ -6,68 +6,79 @@ Make Bluesky a first-class OpenClaw channel: an agent calls the standard `messag
 
 ## Phases
 
-### Phase 1 — Python CLI prototype  ✅ done
+### Phase 1 — Python CLI prototype ✅
 
-Standalone `bsky` CLI in [`../cli/`](../cli/). Validates auth, posting, reading, replies, mentions, hashtags, and rich-text facets against a real account. Useful on its own (cron jobs, scripts, agent Bash invocations) even after the plugin lands.
+Standalone `bsky` CLI in [`../cli/`](../cli/). Validates auth, posting, reading, replies, mentions, hashtags, and rich-text facets against a real account. Useful on its own (cron jobs, scripts, agent Bash invocations) independent of OpenClaw.
 
 Uses [`atproto`](https://atproto.blue/) (MarshalX). Creds live in gnome-keyring under `service=openclaw origin=bluesky`. Session cached as a session string, refreshed on 401.
 
-### Phase 2 — Plugin SDK study  📚 next
+### Phase 2 — Plugin SDK study ✅
 
-OpenClaw is open source ([`github.com/openclaw/openclaw`](https://github.com/openclaw/openclaw)). Read:
+Findings captured in [`PLUGIN_SDK.md`](PLUGIN_SDK.md). Verified the public surface (`openclaw/plugin-sdk/channel-entry-contract` for entry helpers; `ChannelPlugin` is structural, not a public type), the bundled-channel pattern (`defineBundledChannelEntry` + `loadChannelPlugin`), and the manifest/secret/three-source-resolver layout. Reference implementation: `@openclaw/discord`.
 
-- The `@openclaw/discord` plugin source — closest reference.
-- The channel-adapter interface / `channelConfigs` schema.
-- How `to:` addresses are parsed and routed for channels (e.g. `user:<id>`, `channel:<id>`, `thread:<id>`).
-- Inbound event flow — how Discord pushes incoming messages back into the agent loop.
+### Phase 3 — Outbound MVP ✅
 
-Output: a short design doc here describing what the Bluesky plugin needs to expose.
+TypeScript plugin under [`../plugin/`](../plugin/) with:
+- `outbound.sendText` / `sendFormattedText` — posts via `@atproto/api` with rich-text facets (URLs, hashtags, mentions resolved to DIDs), 300-char truncation, reply threading via `replyToId`.
+- `outbound.resolveTarget` — accepts bare handles, `@handle`, `user:handle`, `did:plc:...`, and `at://` post URIs.
+- `gateway.startAccount` / `stopAccount` — polls `app.bsky.notification.listNotifications` every 30s, filters to `mention/reply/quote`, dispatches via `ctx.channelRuntime?.reply`, advances `seenAt` cursor.
+- `secrets.ts` — wraps the host's `runtime-secret-resolution` module (env/file/exec) with a native local fallback so the plugin works inside the host or standalone.
+- `agent-pool.ts` — lazy login, session reuse, dedupes concurrent `getAgent` calls.
 
-### Phase 3 — Outbound MVP plugin
+### Phase 4 — Live host integration ✅
 
-`@8bitalex/openclaw-bluesky` (TypeScript, uses [`@atproto/api`](https://github.com/bluesky-social/atproto/tree/main/packages/api)). Outbound only:
+`openclaw plugins install --link plugin/` installs the linked plugin. `openclaw doctor` reports zero errors. End-to-end test: `blueskyPlugin.outbound.sendText` → exec-source secret resolution (gnome-keyring via `secret-tool`) → agent-pool login → real Bluesky post.
 
-- Auth via app password resolved from env / file / exec (matching Discord's three-source pattern).
-- `message` tool with `channel: "bluesky", to: "user:<handle-or-did>"` → posts a skeet (DM if AT-Proto chat is supported by the account, otherwise public post addressed to the user — TBD by Phase 2).
-- Rich-text facet generation reused from CLI prototype's logic.
+Two non-obvious gotchas we caught here:
+- The plugin manifest needs a top-level `configSchema` (in addition to `channelConfigs.<id>.schema`) or the host validator rejects the install.
+- `runtime-secret-resolution` exports the batch `resolveSecretRefValues`, not the singular `resolveSecretRefString` despite the latter being declared in the d.ts.
 
-### Phase 4 — Inbound
+### Phase 5 — Media + tests + CI ✅
 
-Poll notifications endpoint on an interval (cheaper than firehose for a single account). Surface mentions, replies, follows, likes, quote-posts, DMs as channel events.
+- `outbound.sendMedia` — uploads images to Bluesky's blob store and embeds them as `app.bsky.embed.images`. 4 images / 1 MB each / JPEG-PNG-WebP-GIF. Accepts URLs, file paths, or pre-loaded buffers; alt text supported.
+- `vitest` suite — 42 tests across `facets`, `outbound`, `media`, `setup`, `status`. All passing.
+- GitHub Actions workflow — matrix builds plugin (Node 20/22) and CLI (Python 3.10/3.12) on every push.
 
-Open question: does OpenClaw's channel framework support a poll-based inbound, or does it expect push? Answered in Phase 2.
+### Phase 6 — Setup wizard, status, doctor ✅
 
-### Phase 5 — Rich text & media
+- `setup.applyAccountConfig` — `openclaw channels add bluesky --userId you.bsky.social --password xxxx-xxxx-xxxx-xxxx [--name <accountId>] [--url <pds>]` writes the config block (top-level for `default`, nested for named accounts). Validates handle format and password presence.
+- `status.probeAccount` — calls `getProfile(self)` to verify auth; surfaces handle, DID, follower/following/post counts.
+- `doctor.collectPreviewWarnings` — flags missing/malformed handles and literal app passwords that don't match Bluesky's `xxxx-xxxx-xxxx-xxxx` shape.
 
-- Facets (URL/hashtag/mention) — already prototyped in CLI, port to TS.
-- Embedded images (alt-text required by Bluesky community norms — enforce in tool schema).
-- External link cards (OpenGraph fetch + `app.bsky.embed.external`).
-- Quote posts.
+### Phase 7 — Pre-1.0 polish (in progress)
 
-### Phase 6 — Polish & release
+- DM-style chat via `chat.bsky.*` lexicon — required for true direct messaging vs. public mention-style posts.
+- Video uploads (`app.bsky.embed.video`).
+- External link cards (`app.bsky.embed.external` with OpenGraph fetch).
+- Quote posts (`app.bsky.embed.record`).
+- 429 / `Retry-After` handling — the AT Proto SDK doesn't surface this cleanly; plugin should backoff and propagate as channel backpressure.
 
-- Tests against `atproto` mock or a real test PDS.
-- Rate-limit handling — AT Proto returns `429` with `Retry-After`.
-- Docs site or doc-in-readme — examples of common agent workflows.
-- CI: lint, build, test, publish to npm on tag.
-- Submit to OpenClaw plugin index upstream so it appears in `npm search @openclaw`.
+### Phase 8 — Release
+
+- npm publish on tag (`@8bitalex/openclaw-bluesky`).
+- Submit to upstream OpenClaw plugin index so it shows up in `npm search @openclaw` and the CLI's `openclaw plugins search`.
+- Docs site or expanded README with example agent prompts.
 
 ## Design notes
 
 ### Auth: app passwords, not OAuth
 
-Bluesky has OAuth in the protocol now, but app passwords are stable, well-supported, and what the official Python/JS SDKs default to. OAuth is a Phase 7+ concern.
+Bluesky has OAuth in the protocol, but app passwords are stable, well-supported, and what the official SDKs default to. OAuth is a Phase 9+ concern.
 
 ### Identity: handles vs DIDs
 
-Plugin should accept either in `to:`. Resolve handles → DIDs at send time and cache. DID is the durable identifier; handles can change.
+The plugin accepts either in `to:`. Handles get resolved → DID at send time inside facet generation. DID is the durable identifier; handles can change but DIDs don't.
 
 ### Rate limits
 
-AT Proto rate limits are per-PDS and fairly generous, but a chatty agent could hit them. Plugin should respect `Retry-After` and surface backpressure to the agent rather than silently dropping.
+AT Proto rate limits are per-PDS and fairly generous, but a chatty agent could hit them. Phase 7 will add `Retry-After` honoring; today the plugin lets atproto-api errors surface to the host.
 
-### Why TypeScript not Python
+### Why TypeScript, not Python
 
-OpenClaw plugins are npm packages. Python would mean shelling out from the TS adapter, which adds latency, deployment complexity, and a worse error story. The official `@atproto/api` JS SDK is well-maintained.
+OpenClaw plugins are npm packages. Python would mean shelling out from a TS adapter — extra latency, harder deployment, worse error stories. The official `@atproto/api` JS SDK is well-maintained.
 
-The Python CLI stays useful as a standalone tool independent of OpenClaw.
+The Python CLI in [`../cli/`](../cli/) stays useful as a standalone tool, independent of OpenClaw.
+
+### Default-account convention
+
+Single-account users put `handle` and `appPassword` directly under `channels.bluesky` (matching `@openclaw/discord`'s flat shape). Multi-account users override per-account fields under `channels.bluesky.accounts.<id>`. The implicit `default` accountId resolves the top-level fields.
