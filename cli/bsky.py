@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import secrets
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -21,6 +23,37 @@ from _facets import extract_facets  # noqa: E402
 
 STATE_DIR = Path.home() / ".local/share/openclaw/bluesky"
 SESSION_FILE = STATE_DIR / "session.txt"
+POSTS_LOG = STATE_DIR / "posts.jsonl"
+
+
+def _build_utms(medium: str, campaign: str | None, content: str | None) -> dict[str, str]:
+    """Per-post UTM params. utm_content is a unique 8-char slug we log alongside
+    the resulting post URI so PostHog clicks can be correlated back to the post.
+    """
+    source = os.environ.get("BSKY_UTM_SOURCE", "bluesky")
+    return {
+        "utm_source": source,
+        "utm_medium": medium,
+        "utm_campaign": campaign or os.environ.get("BSKY_UTM_CAMPAIGN", "organic"),
+        "utm_content": content or secrets.token_urlsafe(6),
+    }
+
+
+def _log_post(post_uri: str, utms: dict[str, str], text: str, tagged_urls: list[str]) -> None:
+    """Append a one-line JSON record so we can correlate Bluesky post URIs with
+    utm_content slugs later (PostHog only sees the slug; we need this side-table
+    to know which post drove which click).
+    """
+    POSTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+    rec = {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "post_uri": post_uri,
+        "utm": utms,
+        "tagged_urls": tagged_urls,
+        "text": text,
+    }
+    with POSTS_LOG.open("a") as f:
+        f.write(json.dumps(rec) + "\n")
 
 
 def keyring_lookup(**attrs: str) -> str:
@@ -73,9 +106,21 @@ def cmd_whoami(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _build_facets(client: Client, text: str) -> list:
-    raw = extract_facets(client, text)
+def _build_facets(client: Client, text: str, utms: dict[str, str] | None = None) -> list:
+    raw = extract_facets(client, text, utms=utms)
     return [models.AppBskyRichtextFacet.Main(**f) for f in raw] if raw else None
+
+
+def _tagged_urls(facets_raw: list[dict]) -> list[str]:
+    """Return link-facet URIs that actually got UTMs applied (so the log
+    only records URLs the rewrite touched, not every link in the post)."""
+    out = []
+    for f in facets_raw or []:
+        for feat in f.get("features") or []:
+            uri = feat.get("uri", "")
+            if "utm_source=" in uri:
+                out.append(uri)
+    return out
 
 
 def cmd_post(args: argparse.Namespace) -> int:
@@ -84,10 +129,12 @@ def cmd_post(args: argparse.Namespace) -> int:
     if not text.strip():
         print("error: empty post", file=sys.stderr)
         return 1
-    facets_raw = extract_facets(client, text)
+    utms = None if args.no_utm else _build_utms("post", args.campaign, None)
+    facets_raw = extract_facets(client, text, utms=utms)
     if args.dry_run:
         print("--- DRY RUN (would post) ---")
         print(text)
+        print(f"--- utms --- {utms or '(disabled)'}")
         print("--- facets ---")
         for f in facets_raw:
             feat = f["features"][0]
@@ -106,6 +153,11 @@ def cmd_post(args: argparse.Namespace) -> int:
     handle = client.me.handle if hasattr(client.me, "handle") else None
     if handle:
         print(f"  url:  https://bsky.app/profile/{handle}/post/{web_id}")
+    if utms:
+        tagged = _tagged_urls(facets_raw)
+        if tagged:
+            _log_post(res.uri, utms, text, tagged)
+            print(f"  utm:  content={utms['utm_content']} medium={utms['utm_medium']} campaign={utms['utm_campaign']} (logged to posts.jsonl)")
     return 0
 
 
@@ -163,9 +215,16 @@ def cmd_reply(args: argparse.Namespace) -> int:
         "root": root,
         "parent": {"uri": parent.uri, "cid": parent.cid},
     }
-    facets = _build_facets(client, args.text)
+    utms = None if args.no_utm else _build_utms("reply", args.campaign, None)
+    facets_raw = extract_facets(client, args.text, utms=utms)
+    facets = [models.AppBskyRichtextFacet.Main(**f) for f in facets_raw] if facets_raw else None
     res = client.send_post(text=args.text, reply_to=reply_to, facets=facets)
     print(f"replied: {res.uri}")
+    if utms:
+        tagged = _tagged_urls(facets_raw)
+        if tagged:
+            _log_post(res.uri, utms, args.text, tagged)
+            print(f"  utm:  content={utms['utm_content']} medium=reply campaign={utms['utm_campaign']} (logged to posts.jsonl)")
     return 0
 
 
@@ -194,6 +253,8 @@ def main() -> int:
     sp = sub.add_parser("post", help="create a post (use - for stdin)")
     sp.add_argument("text")
     sp.add_argument("--dry-run", action="store_true", help="print text + facets, do not post")
+    sp.add_argument("--campaign", help="utm_campaign value (default: $BSKY_UTM_CAMPAIGN or 'organic')")
+    sp.add_argument("--no-utm", action="store_true", help="post URLs raw, skip UTM rewrite + ledger entry")
     sp.set_defaults(func=cmd_post)
 
     sp = sub.add_parser("delete", help="delete a post by URI")
@@ -212,6 +273,8 @@ def main() -> int:
     sp = sub.add_parser("reply", help="reply to a post URI")
     sp.add_argument("uri")
     sp.add_argument("text")
+    sp.add_argument("--campaign", help="utm_campaign value (default: $BSKY_UTM_CAMPAIGN or 'organic')")
+    sp.add_argument("--no-utm", action="store_true", help="post URLs raw, skip UTM rewrite + ledger entry")
     sp.set_defaults(func=cmd_reply)
 
     sp = sub.add_parser("like", help="like a post URI")
