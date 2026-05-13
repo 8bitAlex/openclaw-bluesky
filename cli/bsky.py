@@ -54,6 +54,48 @@ def _log_post(post_uri: str, utms: dict[str, str], text: str, tagged_urls: list[
     }
     with POSTS_LOG.open("a") as f:
         f.write(json.dumps(rec) + "\n")
+    _posthog_capture_post(post_uri, utms, text, tagged_urls)
+
+
+def _posthog_capture_post(post_uri: str, utms: dict[str, str], text: str, tagged_urls: list[str]) -> None:
+    """Fire a 'bsky_post_published' event at PostHog so outbound social activity
+    shows up alongside web traffic. Best-effort, never raises — failure here
+    must not break a successful post.
+    """
+    try:
+        key = keyring_lookup(service="openclaw/posthog", username="publishable-key")
+        if not key:
+            return
+    except subprocess.CalledProcessError:
+        return  # no key configured, skip silently
+
+    medium = utms.get("utm_medium", "post")
+    payload = {
+        "api_key": key,
+        "event": f"bsky_{medium}_published",  # bsky_post_published / bsky_reply_published
+        "distinct_id": "openclaw-bluesky-cli",
+        "properties": {
+            "post_uri": post_uri,
+            "utm_source": utms.get("utm_source"),
+            "utm_medium": medium,
+            "utm_campaign": utms.get("utm_campaign"),
+            "utm_content": utms.get("utm_content"),
+            "tagged_urls": tagged_urls,
+            "text_length": len(text),
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            "https://us.i.posthog.com/i/v0/e/",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=3).read()
+    except Exception:
+        pass  # non-fatal — the post already succeeded
 
 
 def keyring_lookup(**attrs: str) -> str:
