@@ -278,6 +278,54 @@ def cmd_like(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_search(args: argparse.Namespace) -> int:
+    """Search public Bluesky posts via app.bsky.feed.searchPosts.
+
+    Emits JSONL (one post per line) when --json is set so other tools
+    (social-manager tick) can consume it. Otherwise prints a human-readable
+    table.
+    """
+    client = get_client()
+    params = {"q": args.query, "limit": args.limit}
+    if args.sort:
+        params["sort"] = args.sort  # 'latest' or 'top'
+    if args.lang:
+        params["lang"] = args.lang
+    if args.since:
+        params["since"] = args.since
+    res = client.app.bsky.feed.search_posts(params=params)
+    for p in res.posts:
+        author = p.author
+        rec = p.record
+        text = (getattr(rec, "text", "") or "").replace("\n", " ⏎ ")
+        out = {
+            "uri": p.uri,
+            "cid": p.cid,
+            "indexed_at": p.indexed_at,
+            "like_count": p.like_count or 0,
+            "reply_count": p.reply_count or 0,
+            "repost_count": p.repost_count or 0,
+            "author_did": author.did,
+            "author_handle": author.handle,
+            "author_display_name": author.display_name or "",
+            "text": getattr(rec, "text", "") or "",
+            "lang": (getattr(rec, "langs", None) or [None])[0],
+            "is_reply": bool(getattr(rec, "reply", None)),
+        }
+        if args.json:
+            print(json.dumps(out))
+        else:
+            tlen = 110
+            print(
+                f"[{fmt_time(p.indexed_at)}] @{author.handle:30s} "
+                f"♥{out['like_count']:<4d} 💬{out['reply_count']:<3d} "
+                f"{(text[:tlen] + '…') if len(text) > tlen else text}"
+            )
+            if args.uris:
+                print(f"    {p.uri}")
+    return 0
+
+
 def cmd_raw(args: argparse.Namespace) -> int:
     """Dump current authed session info as JSON. Useful for debugging."""
     client = get_client()
@@ -322,6 +370,16 @@ def main() -> int:
     sp = sub.add_parser("like", help="like a post URI")
     sp.add_argument("uri")
     sp.set_defaults(func=cmd_like)
+
+    sp = sub.add_parser("search", help="search public posts (app.bsky.feed.searchPosts)")
+    sp.add_argument("query")
+    sp.add_argument("--limit", type=int, default=25)
+    sp.add_argument("--sort", choices=["latest", "top"], default="latest")
+    sp.add_argument("--lang", help="ISO 639-1 language filter, e.g. 'en'")
+    sp.add_argument("--since", help="ISO 8601 timestamp lower bound")
+    sp.add_argument("--json", action="store_true", help="emit one JSON object per post (JSONL)")
+    sp.add_argument("--uris", action="store_true", help="show post URI on a second line per result")
+    sp.set_defaults(func=cmd_search)
 
     sub.add_parser("raw").set_defaults(func=cmd_raw)
 
