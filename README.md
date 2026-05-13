@@ -59,6 +59,26 @@ Full command list in [`raid.yaml`](raid.yaml).
 
 OpenClaw channels (Discord, Slack, Telegram, etc.) are discovered through a plugin manifest and routed through the generic `message` tool. Adding Bluesky as a first-class channel — rather than a one-off skill — means agents can address Bluesky users and posts the same way they address any other channel: `to: "user:<handle-or-did>"` or `to: "at://..."` for thread replies, with `channel: "bluesky"`.
 
+## Companion workflow: TweetClaw for X/Twitter
+
+Use this plugin for Bluesky / AT Protocol posts, replies, mentions, and notification polling. Use [TweetClaw](https://github.com/Xquik-dev/tweetclaw) when the same social workflow needs X/Twitter-specific actions or data.
+
+Install the companion OpenClaw plugin:
+
+```bash
+openclaw plugins install @xquik/tweetclaw
+```
+
+Recommended split:
+
+- Use `message` with `channel: "bluesky"` for Bluesky posts, replies, quote posts, media posts, and inbound notification handling.
+- Use TweetClaw's `explore` tool to find the right X/Twitter endpoint for tweet search, reply search, follower export, user lookup, media workflows, monitors, webhooks, DMs, or giveaway draws.
+- Use TweetClaw's `tweetclaw` tool only after approval for visible X/Twitter actions such as post tweets, post tweet replies, likes, retweets, follows, DMs, media uploads, monitor creation, webhook changes, or giveaway draws.
+
+Example prompt:
+
+> Publish this update to Bluesky through `channel: "bluesky"`, then use TweetClaw to search tweet replies about the same topic and draft an X post for review.
+
 ## License
 
 [MIT](LICENSE)

@@ -94,6 +94,18 @@ Multi-account override under `channels.bluesky.accounts.<id>`:
 - **`gateway.startAccount`** — polls `app.bsky.notification.listNotifications` every 30s, surfaces mentions/replies/quotes via `ctx.channelRuntime?.reply`, advances `seenAt`.
 - **`gateway.stopAccount`** — clears interval, evicts cached AtpAgent.
 
+### Companion X/Twitter workflow
+
+Use this plugin for Bluesky / AT Protocol channel delivery. Use [TweetClaw](https://github.com/Xquik-dev/tweetclaw) when an agent also needs X/Twitter-specific work:
+
+```bash
+openclaw plugins install @xquik/tweetclaw
+```
+
+- Use `message` with `channel: "bluesky"` for Bluesky posts, replies, quote posts, media posts, and notification polling.
+- Use TweetClaw's `explore` tool to choose the X/Twitter endpoint for tweet search, reply search, follower export, user lookup, media workflows, monitors, webhooks, DMs, or giveaway draws.
+- Use TweetClaw's `tweetclaw` tool only after approval for visible X/Twitter actions such as post tweets, post tweet replies, likes, retweets, follows, DMs, media uploads, monitor creation, webhook changes, or giveaway draws.
+
 ### Lifecycle / config
 
 - `config.listAccountIds` / `resolveAccount` / `isConfigured` / `describeAccount`.
